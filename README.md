@@ -1,5 +1,3 @@
-Dưới đây là file README.md chuyên nghiệp, đầy đủ hướng dẫn cài đặt và sử dụng cho dự án của bạn. Bạn có thể tạo file README.md trong cùng thư mục component hoặc dùng để đăng lên Github chia sẻ cho cộng đồng.
-
 📰 VN News Summary AI for Home Assistant
 VN News Summary AI là một Custom Component cho Home Assistant, giúp bạn tự động thu thập tin tức từ các báo điện tử Việt Nam (VnExpress, Tuổi Trẻ, Dân Trí...), sử dụng trí tuệ nhân tạo (Gemini hoặc Groq) để tóm tắt nội dung, và tạo ra các cảm biến (sensor) để đọc trên loa thông minh (Google Home/Alexa).
 
