@@ -1,0 +1,6 @@
+{
+  "name": "VN News Summary AI",
+  "render_readme": true,
+  "homeassistant": "2024.1.0",
+  "iot_class": "cloud_polling"
+}
