@@ -1,0 +1,12 @@
+{
+  "domain": "vn_news_summary",
+  "name": "VN News Summary AI",
+  "config_flow": true,
+  "documentation": "https://github.com",
+  "requirements": ["feedparser>=6.0.0"],
+  "dependencies": [],
+  "codeowners": [],
+  "version": "2.3.0",
+  "iot_class": "cloud_polling",
+  "icon": "mdi:newspaper-variant-outline"
+}

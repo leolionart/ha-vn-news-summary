@@ -1,0 +1,18 @@
+read_news:
+  name: Đọc tin tức AI
+  description: Đọc nội dung tóm tắt tin tức mới nhất ra loa thông minh.
+  fields:
+    entity_id:
+      name: Loa phát (Entity ID)
+      description: Chọn loa bạn muốn phát (ví dụ media_player.google_home).
+      required: true
+      selector:
+        entity:
+          domain: media_player
+    tts_service:
+      name: Dịch vụ TTS
+      description: Dịch vụ giọng nói (Mặc định là tts.google_translate_say).
+      required: false
+      default: tts.google_translate_say
+      selector:
+        text:
