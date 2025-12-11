@@ -24,6 +24,9 @@ HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
 }
 
+# Danh sách từ khóa mặc định cần loại bỏ (Bạn có thể sửa trực tiếp ở đây hoặc đưa vào Config Flow sau)
+BAD_KEYWORDS = ["tử vong", "chết", "tai nạn", "giết", "hiếp", "thảm sát", "bắt giữ", "ma túy", "mại dâm"]
+
 async def async_setup_entry(hass, config_entry, async_add_entities):
     config = config_entry.data.copy()
     if config_entry.options:
@@ -32,17 +35,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     api_key = config.get(CONF_API_KEY)
     provider = config.get(CONF_AI_PROVIDER, "gemini")
     model_name = config.get(CONF_MODEL, DEFAULT_MODEL)
-    
-    # Lấy cấu hình độ dài
     summary_len = config.get(CONF_SUMMARY_LENGTH, DEFAULT_LENGTH)
+    user_style = config.get(CONF_PROMPT, "") 
 
     raw_sources = config.get(CONF_SOURCES, "")
     sources = []
     if raw_sources:
         sources = [s.strip() for s in re.split(r'[\n\s,]+', raw_sources) if s.strip()]
-        
+    
     interval = config.get(CONF_UPDATE_INTERVAL, 60)
-    user_style = config.get(CONF_PROMPT, "") 
 
     async def async_update_data():
         return await hass.async_add_executor_job(
@@ -60,8 +61,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     await coordinator.async_config_entry_first_refresh()
 
     sensors = []
+    # Tạo 20 sensor con
     for i in range(20):
         sensors.append(VnNewsChildSensor(coordinator, i))
+    
+    # Tạo thêm 1 Sensor tổng hợp (Podcast)
+    sensors.append(VnNewsPodcastSensor(coordinator))
+    
     async_add_entities(sensors, True)
 
 class VnNewsChildSensor(CoordinatorEntity, SensorEntity):
@@ -77,7 +83,6 @@ class VnNewsChildSensor(CoordinatorEntity, SensorEntity):
     def state(self):
         data = self.coordinator.data
         if isinstance(data, list) and len(data) > self._index:
-            # Cắt ngắn state để không vi phạm giới hạn 255 ký tự của Hass
             return data[self._index].get('summary', 'Lỗi')[:200] + "..."
         return "Trống"
 
@@ -87,60 +92,113 @@ class VnNewsChildSensor(CoordinatorEntity, SensorEntity):
         if isinstance(data, list) and len(data) > self._index:
             item = data[self._index]
             return {
-                "full_summary": item.get('summary', ''), # Đây là nội dung FULL dài (để đọc loa)
+                "full_summary": item.get('summary', ''),
                 "title": item.get('title', ''),
-                "source": "AI Summary"
+                "link": item.get('link', ''), # Link gốc bài báo
             }
         return {"status": "No Data"}
+
+    @property
+    def entity_picture(self):
+        """Hiển thị ảnh thumbnail bài báo"""
+        data = self.coordinator.data
+        if isinstance(data, list) and len(data) > self._index:
+            return data[self._index].get('image', None)
+        return None
+
+class VnNewsPodcastSensor(CoordinatorEntity, SensorEntity):
+    """Sensor đặc biệt chứa nội dung gộp để đọc 1 lần"""
+    def __init__(self, coordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = "vn_news_podcast_master"
+        self.entity_id = "sensor.vn_news_podcast"
+        self._attr_name = "VN News Podcast Mode"
+        self._attr_icon = "mdi:podcast"
+
+    @property
+    def state(self):
+        data = self.coordinator.data
+        if isinstance(data, list) and len(data) > 0:
+            return "Sẵn sàng phát"
+        return "Không có tin"
+
+    @property
+    def extra_state_attributes(self):
+        data = self.coordinator.data
+        if isinstance(data, list) and len(data) > 0:
+            # Gộp tất cả tóm tắt thành 1 văn bản dài
+            intro = "Chào bạn, đây là tổng hợp tin tức mới nhất. "
+            content = " ".join([f"Tin số {i+1}: {item.get('summary', '')}. " for i, item in enumerate(data)])
+            outro = "Đó là toàn bộ tin tức đáng chú ý. Chúc bạn một ngày tốt lành."
+            return {"podcast_content": intro + content + outro}
+        return {"podcast_content": "Chưa có dữ liệu tin tức."}
 
 def fetch_and_process_json(api_key, provider, sources, user_style, model_name, summary_len):
     if not sources: return []
 
-    # 1. Chuyển đổi lựa chọn độ dài thành hướng dẫn cho AI
-    length_instruction = "khoảng 150 từ" # mặc định
-    if "Ngắn" in summary_len:
-        length_instruction = "thật ngắn gọn, súc tích, khoảng 3 câu (80 từ)"
-    elif "Chi tiết" in summary_len:
-        length_instruction = "chi tiết, đầy đủ các ý chính, khoảng 300 từ"
-    elif "Phân tích" in summary_len: # Rất dài
-        length_instruction = "rất chi tiết, phân tích sâu, khoảng 500 từ"
+    length_instruction = "khoảng 150 từ"
+    if "Ngắn" in summary_len: length_instruction = "ngắn gọn, khoảng 80 từ"
+    elif "Chi tiết" in summary_len: length_instruction = "chi tiết, khoảng 300 từ"
 
-    all_titles = []
+    articles_to_send = []
+    
+    # 1. TẢI RSS VÀ LỌC TIN (FILTER + IMAGE EXTRACT)
     for url in sources:
         if len(url) < 10: continue
         try:
-            if "tuoitre.vn" in url and "rss.htm" in url:
-                url = "https://tuoitre.vn/rss/tin-moi-nhat.rss"
+            if "tuoitre.vn" in url and "rss.htm" in url: url = "https://tuoitre.vn/rss/tin-moi-nhat.rss"
             resp = requests.get(url, headers=HEADERS, timeout=15)
             feed = feedparser.parse(resp.content)
+            
             for entry in feed.entries:
                 t = entry.get('title', '').strip()
-                if t: all_titles.append(t)
+                link = entry.get('link', '')
+                desc = entry.get('description', '')
+                
+                # A. Lọc từ khóa tiêu cực
+                if any(bad in t.lower() for bad in BAD_KEYWORDS):
+                    continue # Bỏ qua tin này
+                
+                # B. Lấy ảnh từ description
+                img_url = None
+                img_match = re.search(r'src="([^"]+jpg|[^"]+png|[^"]+jpeg)"', desc)
+                if img_match:
+                    img_url = img_match.group(1)
+                
+                # Chỉ lấy tối đa 20 tin
+                if len(articles_to_send) < 20:
+                    articles_to_send.append({
+                        "original_title": t,
+                        "link": link,
+                        "image": img_url
+                    })
         except: pass
 
-    if not all_titles: return []
-    top_titles = all_titles[:20]
-    titles_text = "\n".join([f"{i+1}. {t}" for i, t in enumerate(top_titles)])
+    if not articles_to_send: return []
 
-    # 2. PROMPT VỚI ĐỘ DÀI TÙY CHỈNH
+    # Tạo list title để gửi AI
+    titles_text = "\n".join([f"{i+1}. {item['original_title']}" for i, item in enumerate(articles_to_send)])
+
+    # 2. PROMPT
     json_prompt = (
         f"Dưới đây là danh sách tiêu đề báo:\n{titles_text}\n\n"
-        f"Yêu cầu: Hãy đóng vai biên tập viên, tóm tắt nội dung từng tin.\n"
+        f"Yêu cầu: Đóng vai biên tập viên, tóm tắt từng tin.\n"
         f"- Phong cách: {user_style}.\n"
-        f"- Độ dài mỗi tin: {length_instruction}.\n" # <--- Điểm quan trọng
-        f"QUAN TRỌNG: Chỉ trả về kết quả JSON Array chuẩn ([...]). "
-        f"Cấu trúc: [{{ \"id\": 1, \"title\": \"Tiêu đề\", \"summary\": \"Nội dung tóm tắt...\" }}, ...]"
+        f"- Độ dài: {length_instruction}.\n"
+        f"QUAN TRỌNG: Trả về JSON Array đúng thứ tự đầu vào. "
+        f"Cấu trúc: [{{ \"summary\": \"Nội dung tóm tắt...\" }}, ...]"
     )
 
     response_text = ""
     try:
+        # Gọi Gemini/Groq (Giữ nguyên logic cũ)
         if provider == "gemini":
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
             resp = requests.post(
                 url, 
                 json={"contents": [{"parts": [{"text": json_prompt}]}]}, 
                 headers={'Content-Type': 'application/json'},
-                timeout=40 # Tăng timeout vì bài dài AI viết lâu hơn
+                timeout=40
             )
             if resp.status_code == 200:
                 response_text = resp.json()['candidates'][0]['content']['parts'][0]['text']
@@ -148,7 +206,6 @@ def fetch_and_process_json(api_key, provider, sources, user_style, model_name, s
         elif provider == "groq":
             url = "https://api.groq.com/openai/v1/chat/completions"
             if model_name == "llama3-8b-8192": model_name = "llama-3.1-8b-instant"
-            
             resp = requests.post(
                 url,
                 json={
@@ -162,15 +219,33 @@ def fetch_and_process_json(api_key, provider, sources, user_style, model_name, s
             if resp.status_code == 200:
                 response_text = resp.json()['choices'][0]['message']['content']
 
+        # 3. GHÉP DỮ LIỆU AI VÀO DỮ LIỆU GỐC (ẢNH, LINK)
+        ai_data = []
         match = re.search(r'\[.*\]', response_text, re.DOTALL)
         if match:
-            return json.loads(match.group(0))
+            ai_data = json.loads(match.group(0))
+        else:
+            match_obj = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if match_obj:
+                json_obj = json.loads(match_obj.group(0))
+                for key in json_obj:
+                    if isinstance(json_obj[key], list): ai_data = json_obj[key]; break
         
-        match_obj = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if match_obj:
-            json_obj = json.loads(match_obj.group(0))
-            for key in json_obj:
-                if isinstance(json_obj[key], list): return json_obj[key]
+        # Merge kết quả
+        final_result = []
+        for i, article in enumerate(articles_to_send):
+            summary = "Không có tóm tắt"
+            if i < len(ai_data):
+                summary = ai_data[i].get('summary', '')
+            
+            final_result.append({
+                "title": article['original_title'],
+                "link": article['link'],
+                "image": article['image'],
+                "summary": summary
+            })
+            
+        return final_result
             
     except Exception as e:
         _LOGGER.error(f"Lỗi AI JSON: {e}")
