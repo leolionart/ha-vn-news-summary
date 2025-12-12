@@ -1,8 +1,3 @@
-Dưới đây là nội dung file **`README.md`** chuyên nghiệp, đầy đủ và chi tiết nhất cho phiên bản "Ultimate" (tích hợp Podcast, Ảnh thumbnail, Lọc tin rác) mà chúng ta vừa xây dựng.
-
-Bạn có thể copy nội dung này, tạo file tên là `README.md` trong thư mục dự án và upload lên GitHub.
-
------
 
 # 📰 VN News Summary AI (Home Assistant Integration)
 
