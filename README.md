@@ -1,96 +1,108 @@
-📰 VN News Summary AI for Home Assistant
-VN News Summary AI là một Custom Component cho Home Assistant, giúp bạn tự động thu thập tin tức từ các báo điện tử Việt Nam (VnExpress, Tuổi Trẻ, Dân Trí...), sử dụng trí tuệ nhân tạo (Gemini hoặc Groq) để tóm tắt nội dung, và tạo ra các cảm biến (sensor) để đọc trên loa thông minh (Google Home/Alexa).
+Dưới đây là nội dung file **`README.md`** chuyên nghiệp, đầy đủ và chi tiết nhất cho phiên bản "Ultimate" (tích hợp Podcast, Ảnh thumbnail, Lọc tin rác) mà chúng ta vừa xây dựng.
 
-✨ Tính năng nổi bật
-Đa nguồn tin: Hỗ trợ lấy tin từ nhiều nguồn RSS cùng lúc (VnExpress, Tuổi Trẻ, Dân Trí, Thanh Niên...).
+Bạn có thể copy nội dung này, tạo file tên là `README.md` trong thư mục dự án và upload lên GitHub.
 
-Trí tuệ nhân tạo:
+-----
 
-Hỗ trợ Google Gemini (Miễn phí, tốc độ cao).
+# 📰 VN News Summary AI (Home Assistant Integration)
 
-Hỗ trợ Groq (Llama 3, Mixtral...) với khả năng tự động cập nhật danh sách Model mới nhất.
+[](https://github.com/hacs/integration)
+[](https://www.home-assistant.io/)
+[](https://github.com/)
 
-20 Cảm biến tin tức: Tự động tách tin tức thành 20 entity riêng biệt (sensor.vn_news_01 -> 02...), giúp dễ dàng chọn bài để đọc.
+**VN News Summary AI** là một thành phần tùy chỉnh (Custom Component) mạnh mẽ dành cho Home Assistant. Nó tự động thu thập tin tức từ các báo điện tử Việt Nam (VnExpress, Tuổi Trẻ, Dân Trí...), sử dụng trí tuệ nhân tạo (Google Gemini hoặc Groq) để tóm tắt nội dung, lọc tin tiêu cực và chuẩn bị sẵn kịch bản để đọc trên loa thông minh.
 
-Tùy chỉnh linh hoạt:
+*(Hình ảnh minh họa hiển thị trên Dashboard)*
 
-Lựa chọn độ dài tóm tắt: Ngắn (80 từ), Tiêu chuẩn (150 từ), Chi tiết (300 từ)...
+## ✨ Tính năng nổi bật
 
-Tùy chỉnh phong cách (Prompt): Hài hước, Nghiêm túc, Châm biếm...
+  * **🤖 Đa nền tảng AI:** Hỗ trợ **Google Gemini** (Miễn phí, tốc độ cao) và **Groq** (Llama 3, Mixtral - tự động cập nhật danh sách model).
+  * **📸 Hiển thị ảnh bìa (Thumbnail):** Tự động trích xuất hình ảnh từ bài báo để hiển thị đẹp mắt trên Dashboard.
+  * **🎙️ Chế độ Podcast:** Tự động gộp nội dung tóm tắt của 20 tin thành một bài phát thanh liền mạch với lời dẫn nhập/kết thúc (chỉ cần gọi 1 lệnh TTS là đọc hết).
+  * **🛡️ Bộ lọc tin tiêu cực:** Tự động loại bỏ các tin tức chứa từ khóa nhạy cảm (tai nạn, giết người,...) để bản tin buổi sáng trong lành hơn.
+  * **🧩 20 Sensors riêng biệt:** Tách tin tức thành 20 thực thể riêng biệt (`sensor.vn_news_01` -\> `20`) để bạn tùy ý xử lý.
+  * **📝 Tùy chỉnh linh hoạt:**
+      * Chọn độ dài tóm tắt: Ngắn (80 từ), Tiêu chuẩn (150 từ), Chi tiết (300 từ)...
+      * Tùy chỉnh giọng văn (Prompt): Hài hước, nghiêm túc, châm biếm...
 
-Thông minh: Tự động sửa lỗi link RSS hỏng, tự động bỏ qua tin rác, định dạng đầu ra JSON chuẩn xác.
+## 📂 Cài đặt
 
-📂 Cấu trúc thư mục
-Đảm bảo bạn đã tạo các file theo cấu trúc sau trong thư mục /config:
+### Cách 1: Qua HACS (Khuyên dùng)
 
-Plaintext
+1.  Đảm bảo bạn đã cài đặt [HACS](https://hacs.xyz/).
+2.  Vào HACS \> Integrations \> Bấm menu 3 chấm góc trên bên phải \> **Custom repositories**.
+3.  Dán đường dẫn GitHub của repo này vào ô Repository.
+4.  Chọn Category: **Integration**.
+5.  Bấm **Add**, sau đó tìm kiếm "VN News Summary AI" và cài đặt.
+6.  Khởi động lại Home Assistant.
 
-/config/custom_components/vn_news_summary/
-├── __init__.py
-├── config_flow.py
-├── const.py
-├── manifest.json
-├── sensor.py
-├── services.yaml
-└── icon.png  (Tùy chọn: Icon hiển thị)
-🚀 Cài đặt
-Tải toàn bộ code và đặt vào thư mục /config/custom_components/vn_news_summary/.
+### Cách 2: Cài thủ công
 
-Khởi động lại Home Assistant (Bắt buộc để hệ thống cài đặt thư viện feedparser).
+1.  Tải file `.zip` của dự án này về.
+2.  Giải nén và copy thư mục `vn_news_summary` vào đường dẫn `/config/custom_components/` trên Home Assistant của bạn.
+3.  Cấu trúc thư mục chuẩn sẽ là:
+    ```text
+    /config/custom_components/vn_news_summary/
+    ├── __init__.py
+    ├── manifest.json
+    ├── sensor.py
+    ├── ...
+    ```
+4.  Khởi động lại Home Assistant.
 
-Xóa Cache trình duyệt (Ctrl + F5) để hiển thị icon (nếu có).
+## ⚙️ Cấu hình
 
-⚙️ Cấu hình
-Vào Settings > Devices & Services.
+1.  Truy cập **Settings** \> **Devices & Services**.
+2.  Bấm nút **+ Add Integration**.
+3.  Tìm kiếm **"VN News Summary AI"**.
+4.  Điền các thông tin:
+      * **AI Provider:** Chọn `gemini` hoặc `groq`.
+      * **API Key:** Nhập khóa API của bạn.
+      * **Model:** Chọn model AI (Nếu dùng Groq, danh sách sẽ tự tải về).
+      * **Độ dài tóm tắt:** Chọn mức độ chi tiết mong muốn.
+      * **Nguồn tin (Sources):** Nhập danh sách link RSS (mỗi dòng 1 link hoặc cách nhau bằng dấu phẩy).
+          * *VnExpress:* `https://vnexpress.net/rss/tin-moi-nhat.rss`
+          * *Tuổi Trẻ:* `https://tuoitre.vn/rss/tin-moi-nhat.rss`
+          * *Dân Trí:* `https://dantri.com.vn/trangchu.rss`
+5.  Bấm **Submit**.
 
-Bấm Add Integration > Tìm kiếm "VN News Summary AI".
+## 📱 Sử dụng trên Dashboard
 
-Điền thông tin:
+Để hiển thị danh sách tin tức kèm hình ảnh đẹp mắt, bạn có thể sử dụng thẻ **Grid** hoặc **Tile** card.
 
-AI Provider: Chọn Gemini hoặc Groq.
+Ví dụ cấu hình YAML cho Dashboard:
 
-API Key: Nhập key tương ứng.
+```yaml
+type: grid
+square: false
+columns: 2
+cards:
+  - type: tile
+    entity: sensor.vn_news_01
+    name: Tin nóng 1
+    show_entity_picture: true
+  - type: tile
+    entity: sensor.vn_news_02
+    name: Tin nóng 2
+    show_entity_picture: true
+  - type: tile
+    entity: sensor.vn_news_03
+    name: Tin nóng 3
+    show_entity_picture: true
+  - type: tile
+    entity: sensor.vn_news_04
+    name: Tin nóng 4
+    show_entity_picture: true
+```
 
-Model: (Nếu chọn Groq) Chọn model mong muốn (VD: llama-3.1-8b-instant).
+## 🔊 Automation đọc tin (TTS)
 
-Độ dài tóm tắt: Chọn mức độ chi tiết bạn muốn nghe.
+### Kịch bản 1: Chế độ Podcast (Đọc một lèo hết tin)
 
-Nguồn tin (Sources): Dán link RSS (mỗi dòng 1 link hoặc ngăn cách bằng dấu phẩy).
+Đây là cách đơn giản và hay nhất. Sử dụng sensor `sensor.vn_news_podcast`.
 
-Gợi ý link chuẩn:
-
-https://vnexpress.net/rss/tin-moi-nhat.rss
-
-https://tuoitre.vn/rss/tin-moi-nhat.rss
-
-https://dantri.com.vn/trangchu.rss
-
-Bấm Submit.
-
-📡 Entities & Attributes
-Sau khi cài đặt thành công, hệ thống sẽ tạo ra 20 sensors:
-
-sensor.vn_news_01: Tin mới nhất số 1.
-
-...
-
-sensor.vn_news_20: Tin mới nhất số 20.
-
-Thông tin trong mỗi sensor:
-
-State: Đoạn tóm tắt ngắn (để hiển thị trên Dashboard).
-
-Attribute full_summary: Nội dung tóm tắt đầy đủ (Dùng để gửi cho loa đọc).
-
-Attribute title: Tiêu đề gốc của bài báo.
-
-🔊 Hướng dẫn tạo Automation (Đọc loa)
-Cách 1: Đọc liên tục (Sử dụng Smart Wait)
-Cách này giúp loa đọc xong tin này mới chuyển sang tin khác, không bị chồng chéo.
-
-YAML
-
-alias: "Đọc điểm tin sáng"
+```yaml
+alias: "Chào buổi sáng - Đọc báo Podcast"
 trigger:
   - platform: time
     at: "07:00:00"
@@ -100,50 +112,46 @@ action:
     target:
       entity_id: sensor.vn_news_sensor
 
-  # Đọc tin 1
+  # Đọc nội dung Podcast đã được gộp sẵn
   - service: tts.google_translate_say
     data:
-      entity_id: media_player.google_home
-      message: "Tin số 1: {{ state_attr('sensor.vn_news_01', 'full_summary') }}"
-  
-  # Chờ loa đọc xong
-  - delay: "00:00:02"
-  - wait_template: "{{ is_state('media_player.google_home', 'idle') }}"
-    timeout: "00:05:00"
+      entity_id: media_player.google_home_mini
+      message: "{{ state_attr('sensor.vn_news_podcast', 'podcast_content') }}"
+```
 
-  # Đọc tin 2
-  - service: tts.google_translate_say
-    data:
-      entity_id: media_player.google_home
-      message: "Tin số 2: {{ state_attr('sensor.vn_news_02', 'full_summary') }}"
-Cách 2: Script đọc theo yêu cầu (Hey Google)
-Tạo Script để gọi bằng Google Assistant.
+### Kịch bản 2: Hỏi Google để đọc từng tin
 
-YAML
+Nếu bạn muốn ra lệnh *"Hey Google, read news"* để đọc 3 tin đầu tiên.
 
-alias: Read News
+```yaml
+alias: Read News Script
 sequence:
   - service: tts.google_translate_say
     data:
       entity_id: media_player.google_home
       message: >
-        Chào bạn, đây là 3 tin nóng nhất:
-        {{ state_attr('sensor.vn_news_01', 'full_summary') }}
-        Tiếp theo,
-        {{ state_attr('sensor.vn_news_02', 'full_summary') }}
-        Và cuối cùng,
-        {{ state_attr('sensor.vn_news_03', 'full_summary') }}
-❓ Khắc phục sự cố thường gặp
-1. Sensor báo "Lỗi: Không lấy được tin tức nào"
+        Chào bạn, dưới đây là 3 tin đáng chú ý nhất.
+        Tin thứ nhất: {{ state_attr('sensor.vn_news_01', 'full_summary') }}
+        Tin thứ hai: {{ state_attr('sensor.vn_news_02', 'full_summary') }}
+        Và tin thứ ba: {{ state_attr('sensor.vn_news_03', 'full_summary') }}
+```
 
-Kiểm tra lại kết nối mạng của Home Assistant (có chặn Google/Groq không?).
+## ❓ Các vấn đề thường gặp
 
-Kiểm tra link RSS. Đảm bảo dùng link .rss, không dùng link trang web .html.
+**1. Sensor hiện "Trống" hoặc "Lỗi"**
 
-2. Groq báo lỗi "Model decommissioned"
+  * Kiểm tra lại kết nối mạng của Home Assistant.
+  * Kiểm tra API Key có còn hạn mức sử dụng (Quota) không.
+  * Kiểm tra Link RSS có đúng định dạng không (phải là `.rss`).
 
-Groq thường xuyên thay đổi model. Hãy vào Configure của Integration, menu chọn Model sẽ tự động tải danh sách mới nhất về. Hãy chọn model khác.
+**2. Không thấy hình ảnh bài báo**
 
-3. Không thấy Icon hình tờ báo
+  * Không phải nguồn RSS nào cũng cung cấp ảnh trong thẻ `description`. VnExpress và Tuổi Trẻ thường hỗ trợ tốt nhất.
+  * Nếu dùng Tile Card, hãy chắc chắn đã bật `show_entity_picture: true`.
 
-Hãy mở Home Assistant bằng Tab ẩn danh (Incognito). Nếu thấy icon hiện, hãy xóa Cache trình duyệt của bạn.
+**3. Lỗi "Model not found" khi dùng Groq**
+
+  * Groq thường xuyên thay đổi tên Model. Hãy vào **Configure** của Integration, menu chọn Model sẽ tự động tải danh sách mới nhất về.
+
+
+
