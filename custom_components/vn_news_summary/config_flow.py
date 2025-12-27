@@ -6,7 +6,7 @@ from .const import (
     DOMAIN, CONF_API_KEY, CONF_AI_PROVIDER, CONF_SOURCES,
     CONF_UPDATE_INTERVAL, CONF_PROMPT, CONF_MODEL, CONF_SUMMARY_LENGTH, CONF_BASE_URL,
     DEFAULT_SOURCES, DEFAULT_INTERVAL, DEFAULT_PROMPT, DEFAULT_MODEL,
-    LENGTH_OPTIONS, DEFAULT_LENGTH
+    LENGTH_OPTIONS, DEFAULT_LENGTH, DEFAULT_OPENAI_MODEL
 )
 
 FALLBACK_MODELS = [
@@ -62,7 +62,7 @@ class VnNewsOptionsFlowHandler(config_entries.OptionsFlow):
 
         config = self.config_entry.data
         options = self.config_entry.options
-        
+
         # Lấy giá trị hiện tại
         cur_api = options.get(CONF_API_KEY, config.get(CONF_API_KEY))
         cur_prov = options.get(CONF_AI_PROVIDER, config.get(CONF_AI_PROVIDER, "gemini"))
@@ -72,21 +72,32 @@ class VnNewsOptionsFlowHandler(config_entries.OptionsFlow):
 
         # List model logic
         model_list = FALLBACK_MODELS
-        if cur_prov == "groq" and cur_api:
+
+        # Logic dynamic schema cho Model
+        model_schema_field = vol.In(sorted(model_list))
+
+        if cur_prov == "openai":
+            # Nếu là OpenAI -> Cho phép nhập text tự do
+            if not cur_mod or cur_mod == DEFAULT_MODEL or cur_mod in FALLBACK_MODELS:
+                cur_mod = DEFAULT_OPENAI_MODEL
+            model_schema_field = str # Text input
+
+        elif cur_prov == "groq" and cur_api:
             fetched = await self.hass.async_add_executor_job(get_groq_models, cur_api)
-            if fetched: 
+            if fetched:
                 model_list = fetched
                 if cur_mod not in model_list: model_list.append(cur_mod)
+            model_schema_field = vol.In(sorted(model_list))
 
         schema = vol.Schema({
             vol.Required(CONF_API_KEY, default=cur_api): str,
             vol.Required(CONF_AI_PROVIDER, default=cur_prov): vol.In(["gemini", "groq", "openai"]),
             vol.Optional(CONF_BASE_URL, default=cur_base_url): str,
-            vol.Optional(CONF_MODEL, default=cur_mod): vol.In(sorted(model_list)),
+            vol.Optional(CONF_MODEL, default=cur_mod): model_schema_field,
 
             # Menu chọn độ dài mới
             vol.Required(CONF_SUMMARY_LENGTH, default=cur_len): vol.In(LENGTH_OPTIONS),
-            
+
             vol.Required(CONF_SOURCES, default=options.get(CONF_SOURCES, config.get(CONF_SOURCES, DEFAULT_SOURCES))): str,
             vol.Required(CONF_UPDATE_INTERVAL, default=options.get(CONF_UPDATE_INTERVAL, config.get(CONF_UPDATE_INTERVAL, DEFAULT_INTERVAL))): int,
             vol.Required(CONF_PROMPT, default=options.get(CONF_PROMPT, config.get(CONF_PROMPT, DEFAULT_PROMPT))): str,

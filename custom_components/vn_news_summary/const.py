@@ -12,6 +12,7 @@ DEFAULT_SOURCES = "https://vnexpress.net/rss/tin-moi-nhat.rss"
 DEFAULT_INTERVAL = 60
 DEFAULT_PROMPT = "Văn phong biên tập viên tin tức, nghiêm túc, dễ hiểu."
 DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_OPENAI_MODEL = "gemini-2.0-flash"
 
 # Các tùy chọn độ dài
 LENGTH_OPTIONS = [
