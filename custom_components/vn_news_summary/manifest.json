@@ -2,7 +2,7 @@
   "domain": "vn_news_summary",
   "name": "VN News Summary AI",
   "config_flow": true,
-  "documentation": "https://github.com",
+  "documentation": "https://github.com/leolionart/ha-vn-news-summary",
   "requirements": ["feedparser>=6.0.0"],
   "dependencies": [],
   "codeowners": [],
