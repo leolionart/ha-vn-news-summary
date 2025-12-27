@@ -3,7 +3,7 @@ import requests
 import feedparser
 import re
 import json
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
@@ -14,7 +14,11 @@ from homeassistant.components.sensor import SensorEntity
 from .const import (
     DOMAIN, CONF_API_KEY, CONF_AI_PROVIDER, CONF_SOURCES,
     CONF_UPDATE_INTERVAL, CONF_PROMPT, CONF_MODEL, CONF_SUMMARY_LENGTH, CONF_BASE_URL,
-    DEFAULT_MODEL, DEFAULT_LENGTH
+    CONF_MAX_ARTICLES, CONF_INCLUDE_KEYWORDS, CONF_EXCLUDE_KEYWORDS,
+    CONF_QUIET_START, CONF_QUIET_END, CONF_AI_TIMEOUT, CONF_AI_RETRY, CONF_FALLBACK_MODEL,
+    DEFAULT_MODEL, DEFAULT_LENGTH,
+    DEFAULT_MAX_ARTICLES, DEFAULT_INCLUDE_KEYWORDS, DEFAULT_EXCLUDE_KEYWORDS,
+    DEFAULT_QUIET_START, DEFAULT_QUIET_END, DEFAULT_AI_TIMEOUT, DEFAULT_AI_RETRY, DEFAULT_FALLBACK_MODEL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,14 +28,29 @@ HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
 }
 
-# Danh sách từ khóa mặc định cần loại bỏ (Bạn có thể sửa trực tiếp ở đây hoặc đưa vào Config Flow sau)
-BAD_KEYWORDS = ["tử vong", "chết", "tai nạn", "giết", "hiếp", "thảm sát", "bắt giữ", "ma túy", "mại dâm"]
+# Cache để lưu dữ liệu cũ khi API lỗi hoặc trong quiet hours
+_LAST_GOOD_DATA = []
+
+def is_quiet_hours(quiet_start: str, quiet_end: str) -> bool:
+    """Kiểm tra xem hiện tại có nằm trong giờ im lặng không."""
+    try:
+        now = datetime.now().time()
+        start = datetime.strptime(quiet_start, "%H:%M").time()
+        end = datetime.strptime(quiet_end, "%H:%M").time()
+
+        # Xử lý trường hợp qua đêm (22:00 - 06:00)
+        if start > end:
+            return now >= start or now <= end
+        else:
+            return start <= now <= end
+    except:
+        return False
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     config = config_entry.data.copy()
     if config_entry.options:
         config.update(config_entry.options)
-    
+
     api_key = config.get(CONF_API_KEY)
     provider = config.get(CONF_AI_PROVIDER, "gemini")
     model_name = config.get(CONF_MODEL, DEFAULT_MODEL)
@@ -42,13 +61,28 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     raw_sources = config.get(CONF_SOURCES, "")
     sources = []
     if raw_sources:
-        sources = [s.strip() for s in re.split(r'[\n\s,]+', raw_sources) if s.strip()]
-    
+        # Hỗ trợ bật/tắt nguồn bằng # ở đầu dòng
+        for s in re.split(r'[\n,]+', raw_sources):
+            s = s.strip()
+            if s and not s.startswith('#') and len(s) > 10:
+                sources.append(s)
+
     interval = config.get(CONF_UPDATE_INTERVAL, 60)
+
+    # Advanced settings
+    max_articles = config.get(CONF_MAX_ARTICLES, DEFAULT_MAX_ARTICLES)
+    include_keywords = config.get(CONF_INCLUDE_KEYWORDS, DEFAULT_INCLUDE_KEYWORDS)
+    exclude_keywords = config.get(CONF_EXCLUDE_KEYWORDS, DEFAULT_EXCLUDE_KEYWORDS)
+    quiet_start = config.get(CONF_QUIET_START, DEFAULT_QUIET_START)
+    quiet_end = config.get(CONF_QUIET_END, DEFAULT_QUIET_END)
+    ai_timeout = config.get(CONF_AI_TIMEOUT, DEFAULT_AI_TIMEOUT)
+    ai_retry = config.get(CONF_AI_RETRY, DEFAULT_AI_RETRY)
+    fallback_model = config.get(CONF_FALLBACK_MODEL, DEFAULT_FALLBACK_MODEL)
 
     async def async_update_data():
         return await hass.async_add_executor_job(
-            fetch_and_process_json, api_key, provider, sources, user_style, model_name, summary_len, base_url
+            fetch_and_process_json, api_key, provider, sources, user_style, model_name, summary_len, base_url,
+            max_articles, include_keywords, exclude_keywords, quiet_start, quiet_end, ai_timeout, ai_retry, fallback_model
         )
 
     coordinator = DataUpdateCoordinator(
@@ -134,15 +168,30 @@ class VnNewsPodcastSensor(CoordinatorEntity, SensorEntity):
             return {"podcast_content": intro + content + outro}
         return {"podcast_content": "Chưa có dữ liệu tin tức."}
 
-def fetch_and_process_json(api_key, provider, sources, user_style, model_name, summary_len, base_url):
-    if not sources: return []
+def fetch_and_process_json(api_key, provider, sources, user_style, model_name, summary_len, base_url,
+                           max_articles, include_keywords, exclude_keywords, quiet_start, quiet_end,
+                           ai_timeout, ai_retry, fallback_model):
+    global _LAST_GOOD_DATA
+
+    if not sources:
+        return _LAST_GOOD_DATA if _LAST_GOOD_DATA else []
+
+    # Kiểm tra Quiet Hours - nếu trong giờ im lặng thì trả về cache
+    if is_quiet_hours(quiet_start, quiet_end):
+        _LOGGER.info("Đang trong giờ im lặng, sử dụng dữ liệu cache")
+        return _LAST_GOOD_DATA if _LAST_GOOD_DATA else []
+
+    # Parse keyword filters
+    exclude_list = [kw.strip().lower() for kw in exclude_keywords.split(',') if kw.strip()]
+    include_list = [kw.strip().lower() for kw in include_keywords.split(',') if kw.strip()]
 
     length_instruction = "khoảng 150 từ"
     if "Ngắn" in summary_len: length_instruction = "ngắn gọn, khoảng 80 từ"
     elif "Chi tiết" in summary_len: length_instruction = "chi tiết, khoảng 300 từ"
+    elif "Phân tích" in summary_len: length_instruction = "phân tích sâu, khoảng 500 từ"
 
     articles_to_send = []
-    
+
     # 1. TẢI RSS VÀ LỌC TIN (FILTER + IMAGE EXTRACT)
     for url in sources:
         if len(url) < 10: continue
@@ -150,24 +199,29 @@ def fetch_and_process_json(api_key, provider, sources, user_style, model_name, s
             if "tuoitre.vn" in url and "rss.htm" in url: url = "https://tuoitre.vn/rss/tin-moi-nhat.rss"
             resp = requests.get(url, headers=HEADERS, timeout=15)
             feed = feedparser.parse(resp.content)
-            
+
             for entry in feed.entries:
                 t = entry.get('title', '').strip()
                 link = entry.get('link', '')
                 desc = entry.get('description', '')
-                
-                # A. Lọc từ khóa tiêu cực
-                if any(bad in t.lower() for bad in BAD_KEYWORDS):
-                    continue # Bỏ qua tin này
-                
-                # B. Lấy ảnh từ description
+                t_lower = t.lower()
+
+                # A. Lọc từ khóa loại trừ (exclude)
+                if any(bad in t_lower for bad in exclude_list):
+                    continue  # Bỏ qua tin này
+
+                # B. Nếu có include_keywords, chỉ lấy tin chứa từ đó
+                if include_list and not any(inc in t_lower for inc in include_list):
+                    continue  # Bỏ qua nếu không chứa từ khóa ưu tiên
+
+                # C. Lấy ảnh từ description
                 img_url = None
                 img_match = re.search(r'src="([^"]+jpg|[^"]+png|[^"]+jpeg)"', desc)
                 if img_match:
                     img_url = img_match.group(1)
-                
-                # Chỉ lấy tối đa 20 tin
-                if len(articles_to_send) < 20:
+
+                # Giới hạn theo max_articles
+                if len(articles_to_send) < max_articles:
                     articles_to_send.append({
                         "original_title": t,
                         "link": link,
@@ -175,7 +229,8 @@ def fetch_and_process_json(api_key, provider, sources, user_style, model_name, s
                     })
         except: pass
 
-    if not articles_to_send: return []
+    if not articles_to_send:
+        return _LAST_GOOD_DATA if _LAST_GOOD_DATA else []
 
     # Tạo list title để gửi AI
     titles_text = "\n".join([f"{i+1}. {item['original_title']}" for i, item in enumerate(articles_to_send)])
@@ -191,64 +246,81 @@ def fetch_and_process_json(api_key, provider, sources, user_style, model_name, s
     )
 
     response_text = ""
+    models_to_try = [model_name]
+    if fallback_model and fallback_model != model_name:
+        models_to_try.append(fallback_model)
+
+    for current_model in models_to_try:
+        for attempt in range(ai_retry + 1):
+            try:
+                if provider == "gemini":
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+                    resp = requests.post(
+                        url,
+                        json={"contents": [{"parts": [{"text": json_prompt}]}]},
+                        headers={'Content-Type': 'application/json'},
+                        timeout=ai_timeout
+                    )
+                    if resp.status_code == 200:
+                        response_text = resp.json()['candidates'][0]['content']['parts'][0]['text']
+                        break
+
+                elif provider == "groq":
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                    use_model = current_model
+                    if use_model == "llama3-8b-8192": use_model = "llama-3.1-8b-instant"
+                    resp = requests.post(
+                        url,
+                        json={
+                            "messages": [{"role": "user", "content": json_prompt}],
+                            "model": use_model,
+                            "response_format": {"type": "json_object"}
+                        },
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        timeout=ai_timeout
+                    )
+                    if resp.status_code == 200:
+                        response_text = resp.json()['choices'][0]['message']['content']
+                        break
+
+                elif provider == "openai":
+                    url = base_url if base_url else "https://api.openai.com/v1/chat/completions"
+                    if "chat/completions" not in url:
+                        url = url.rstrip('/') + "/chat/completions"
+
+                    resp = requests.post(
+                        url,
+                        json={
+                            "messages": [{"role": "user", "content": json_prompt}],
+                            "model": current_model,
+                            "response_format": {"type": "json_object"}
+                        },
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        timeout=ai_timeout
+                    )
+                    if resp.status_code == 200:
+                        response_text = resp.json()['choices'][0]['message']['content']
+                        break
+                    else:
+                        _LOGGER.warning(f"OpenAI Error {resp.status_code}: {resp.text}")
+
+            except requests.exceptions.Timeout:
+                _LOGGER.warning(f"AI timeout (attempt {attempt + 1}/{ai_retry + 1}) với model {current_model}")
+            except Exception as e:
+                _LOGGER.warning(f"AI error (attempt {attempt + 1}/{ai_retry + 1}): {e}")
+
+        if response_text:
+            break  # Thành công, thoát khỏi vòng lặp model
+        elif current_model != models_to_try[-1]:
+            _LOGGER.info(f"Chuyển sang fallback model: {fallback_model}")
+
+    # Nếu không có response, trả về cache
+    if not response_text:
+        _LOGGER.error("Không thể lấy dữ liệu từ AI, sử dụng cache")
+        return _LAST_GOOD_DATA if _LAST_GOOD_DATA else []
+
+    # 3. GHÉP DỮ LIỆU AI VÀO DỮ LIỆU GỐC (ẢNH, LINK)
     try:
-        # Gọi Gemini/Groq (Giữ nguyên logic cũ)
-        if provider == "gemini":
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-            resp = requests.post(
-                url, 
-                json={"contents": [{"parts": [{"text": json_prompt}]}]}, 
-                headers={'Content-Type': 'application/json'},
-                timeout=40
-            )
-            if resp.status_code == 200:
-                response_text = resp.json()['candidates'][0]['content']['parts'][0]['text']
-
-        elif provider == "groq":
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            if model_name == "llama3-8b-8192": model_name = "llama-3.1-8b-instant"
-            resp = requests.post(
-                url,
-                json={
-                    "messages": [{"role": "user", "content": json_prompt}],
-                    "model": model_name,
-                    "response_format": {"type": "json_object"}
-                },
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=40
-            )
-            if resp.status_code == 200:
-                response_text = resp.json()['choices'][0]['message']['content']
-
-        elif provider == "openai":
-            # Sử dụng Base URL nếu có, ngược lại dùng mặc định
-            url = base_url if base_url else "https://api.openai.com/v1/chat/completions"
-            # Chuẩn hóa URL nếu người dùng quên /v1/chat/completions trong base url ngắn gọn (tuỳ chọn, ở đây giả định base_url là full endpoint hoặc base path)
-            # Tuy nhiên, thông thường base_url trong các thư viện là "https://api.openai.com/v1", còn endpoint cụ thể ghép sau.
-            # Để đơn giản cho user, ta quy ước user nhập FULL endpoint hoặc ta ghép.
-            # Cách an toàn: Nếu base_url không chứa "chat/completions", ta nối vào (logic mềm dẻo).
-            if "chat/completions" not in url:
-                url = url.rstrip('/') + "/chat/completions"
-
-            resp = requests.post(
-                url,
-                json={
-                    "messages": [{"role": "user", "content": json_prompt}],
-                    "model": model_name,
-                    # OpenAI hỗ trợ response_format={"type": "json_object"} với các model mới
-                    # Để an toàn, ta chỉ dùng nếu model hỗ trợ, hoặc cứ gửi, nếu lỗi thì fallback (nhưng ở đây cứ gửi)
-                    # Lưu ý: OpenAI yêu cầu prompt phải có chữ "JSON" nếu dùng mode json_object. Prompt của ta đã có.
-                    "response_format": {"type": "json_object"}
-                },
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                timeout=40
-            )
-            if resp.status_code == 200:
-                response_text = resp.json()['choices'][0]['message']['content']
-            else:
-                 _LOGGER.error(f"OpenAI Error {resp.status_code}: {resp.text}")
-
-        # 3. GHÉP DỮ LIỆU AI VÀO DỮ LIỆU GỐC (ẢNH, LINK)
         ai_data = []
         match = re.search(r'\[.*\]', response_text, re.DOTALL)
         if match:
@@ -259,24 +331,25 @@ def fetch_and_process_json(api_key, provider, sources, user_style, model_name, s
                 json_obj = json.loads(match_obj.group(0))
                 for key in json_obj:
                     if isinstance(json_obj[key], list): ai_data = json_obj[key]; break
-        
+
         # Merge kết quả
         final_result = []
         for i, article in enumerate(articles_to_send):
             summary = "Không có tóm tắt"
             if i < len(ai_data):
                 summary = ai_data[i].get('summary', '')
-            
+
             final_result.append({
                 "title": article['original_title'],
                 "link": article['link'],
                 "image": article['image'],
                 "summary": summary
             })
-            
+
+        # Lưu cache
+        _LAST_GOOD_DATA = final_result
         return final_result
-            
+
     except Exception as e:
-        _LOGGER.error(f"Lỗi AI JSON: {e}")
-    
-    return []
+        _LOGGER.error(f"Lỗi parse AI JSON: {e}")
+        return _LAST_GOOD_DATA if _LAST_GOOD_DATA else []

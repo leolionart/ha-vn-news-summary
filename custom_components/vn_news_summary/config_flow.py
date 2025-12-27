@@ -10,7 +10,11 @@ from homeassistant.helpers.selector import (
 from .const import (
     DOMAIN, CONF_API_KEY, CONF_AI_PROVIDER, CONF_SOURCES,
     CONF_UPDATE_INTERVAL, CONF_PROMPT, CONF_MODEL, CONF_SUMMARY_LENGTH, CONF_BASE_URL,
+    CONF_MAX_ARTICLES, CONF_INCLUDE_KEYWORDS, CONF_EXCLUDE_KEYWORDS,
+    CONF_QUIET_START, CONF_QUIET_END, CONF_AI_TIMEOUT, CONF_AI_RETRY, CONF_FALLBACK_MODEL,
     DEFAULT_SOURCES, DEFAULT_INTERVAL, DEFAULT_PROMPT, DEFAULT_MODEL,
+    DEFAULT_MAX_ARTICLES, DEFAULT_INCLUDE_KEYWORDS, DEFAULT_EXCLUDE_KEYWORDS,
+    DEFAULT_QUIET_START, DEFAULT_QUIET_END, DEFAULT_AI_TIMEOUT, DEFAULT_AI_RETRY, DEFAULT_FALLBACK_MODEL,
     LENGTH_OPTIONS, DEFAULT_LENGTH, DEFAULT_OPENAI_MODEL
 )
 
@@ -55,6 +59,21 @@ class VnNewsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_INTERVAL): int,
             vol.Optional(CONF_SUMMARY_LENGTH, default=DEFAULT_LENGTH): vol.In(LENGTH_OPTIONS),
             vol.Optional(CONF_PROMPT, default=DEFAULT_PROMPT): str,
+            # Advanced settings
+            vol.Optional(CONF_MAX_ARTICLES, default=DEFAULT_MAX_ARTICLES): int,
+            vol.Optional(CONF_INCLUDE_KEYWORDS, default=DEFAULT_INCLUDE_KEYWORDS): str,
+            vol.Optional(CONF_EXCLUDE_KEYWORDS, default=DEFAULT_EXCLUDE_KEYWORDS): str,
+            vol.Optional(CONF_QUIET_START, default=DEFAULT_QUIET_START): str,
+            vol.Optional(CONF_QUIET_END, default=DEFAULT_QUIET_END): str,
+            vol.Optional(CONF_AI_TIMEOUT, default=DEFAULT_AI_TIMEOUT): int,
+            vol.Optional(CONF_AI_RETRY, default=DEFAULT_AI_RETRY): int,
+            vol.Optional(CONF_FALLBACK_MODEL, default=DEFAULT_FALLBACK_MODEL): SelectSelector(
+                SelectSelectorConfig(
+                    options=sorted(FALLBACK_MODELS),
+                    custom_value=True,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
         })
 
         return self.async_show_form(step_id="user", data_schema=data_schema)
@@ -105,6 +124,25 @@ class VnNewsOptionsFlowHandler(config_entries.OptionsFlow):
             )
         )
 
+        # Get current advanced settings
+        cur_max_articles = options.get(CONF_MAX_ARTICLES, config.get(CONF_MAX_ARTICLES, DEFAULT_MAX_ARTICLES))
+        cur_include_kw = options.get(CONF_INCLUDE_KEYWORDS, config.get(CONF_INCLUDE_KEYWORDS, DEFAULT_INCLUDE_KEYWORDS))
+        cur_exclude_kw = options.get(CONF_EXCLUDE_KEYWORDS, config.get(CONF_EXCLUDE_KEYWORDS, DEFAULT_EXCLUDE_KEYWORDS))
+        cur_quiet_start = options.get(CONF_QUIET_START, config.get(CONF_QUIET_START, DEFAULT_QUIET_START))
+        cur_quiet_end = options.get(CONF_QUIET_END, config.get(CONF_QUIET_END, DEFAULT_QUIET_END))
+        cur_timeout = options.get(CONF_AI_TIMEOUT, config.get(CONF_AI_TIMEOUT, DEFAULT_AI_TIMEOUT))
+        cur_retry = options.get(CONF_AI_RETRY, config.get(CONF_AI_RETRY, DEFAULT_AI_RETRY))
+        cur_fallback = options.get(CONF_FALLBACK_MODEL, config.get(CONF_FALLBACK_MODEL, DEFAULT_FALLBACK_MODEL))
+
+        # Fallback model selector
+        fallback_selector = SelectSelector(
+            SelectSelectorConfig(
+                options=sorted(model_list),
+                custom_value=True,
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        )
+
         schema = vol.Schema({
             vol.Required(CONF_API_KEY, default=cur_api): str,
             vol.Required(CONF_AI_PROVIDER, default=cur_prov): vol.In(["gemini", "groq", "openai"]),
@@ -117,6 +155,16 @@ class VnNewsOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Required(CONF_SOURCES, default=options.get(CONF_SOURCES, config.get(CONF_SOURCES, DEFAULT_SOURCES))): str,
             vol.Required(CONF_UPDATE_INTERVAL, default=options.get(CONF_UPDATE_INTERVAL, config.get(CONF_UPDATE_INTERVAL, DEFAULT_INTERVAL))): int,
             vol.Required(CONF_PROMPT, default=options.get(CONF_PROMPT, config.get(CONF_PROMPT, DEFAULT_PROMPT))): str,
+
+            # Advanced settings
+            vol.Optional(CONF_MAX_ARTICLES, default=cur_max_articles): int,
+            vol.Optional(CONF_INCLUDE_KEYWORDS, default=cur_include_kw): str,
+            vol.Optional(CONF_EXCLUDE_KEYWORDS, default=cur_exclude_kw): str,
+            vol.Optional(CONF_QUIET_START, default=cur_quiet_start): str,
+            vol.Optional(CONF_QUIET_END, default=cur_quiet_end): str,
+            vol.Optional(CONF_AI_TIMEOUT, default=cur_timeout): int,
+            vol.Optional(CONF_AI_RETRY, default=cur_retry): int,
+            vol.Optional(CONF_FALLBACK_MODEL, default=cur_fallback): fallback_selector,
         })
 
         return self.async_show_form(step_id="init", data_schema=schema)
