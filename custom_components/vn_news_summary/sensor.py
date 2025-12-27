@@ -95,23 +95,31 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     await coordinator.async_config_entry_first_refresh()
 
+    # Lấy entry_id và title để tạo unique sensors cho mỗi config entry
+    entry_id = config_entry.entry_id
+    entry_title = config_entry.title or "VN News"
+
     sensors = []
-    # Tạo 20 sensor con
+    # Tạo 20 sensor con - mỗi sensor đại diện 1 bài báo
     for i in range(20):
-        sensors.append(VnNewsChildSensor(coordinator, i))
-    
+        sensors.append(VnNewsChildSensor(coordinator, i, entry_id, entry_title))
+
     # Tạo thêm 1 Sensor tổng hợp (Podcast)
-    sensors.append(VnNewsPodcastSensor(coordinator))
+    sensors.append(VnNewsPodcastSensor(coordinator, entry_id, entry_title))
     
     async_add_entities(sensors, True)
 
 class VnNewsChildSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, coordinator, index):
+    def __init__(self, coordinator, index, entry_id: str, entry_title: str):
         super().__init__(coordinator)
         self._index = index
-        self._attr_unique_id = f"vn_news_article_{index + 1}"
-        self.entity_id = f"sensor.vn_news_{index + 1:02d}"
-        self._attr_name = f"VN News {index + 1}"
+        self._entry_id = entry_id
+        # Unique ID phải bao gồm entry_id để tránh trùng khi có nhiều config entries
+        self._attr_unique_id = f"{entry_id}_article_{index + 1}"
+        # Tạo slug từ title để entity_id dễ đọc
+        slug = entry_title.lower().replace(" ", "_")[:20]
+        self.entity_id = f"sensor.{slug}_news_{index + 1:02d}"
+        self._attr_name = f"{entry_title} News {index + 1}"
         self._attr_icon = "mdi:newspaper"
 
     @property
@@ -143,11 +151,15 @@ class VnNewsChildSensor(CoordinatorEntity, SensorEntity):
 
 class VnNewsPodcastSensor(CoordinatorEntity, SensorEntity):
     """Sensor đặc biệt chứa nội dung gộp để đọc 1 lần"""
-    def __init__(self, coordinator):
+    def __init__(self, coordinator, entry_id: str, entry_title: str):
         super().__init__(coordinator)
-        self._attr_unique_id = "vn_news_podcast_master"
-        self.entity_id = "sensor.vn_news_podcast"
-        self._attr_name = "VN News Podcast Mode"
+        self._entry_id = entry_id
+        # Unique ID phải bao gồm entry_id để tránh trùng
+        self._attr_unique_id = f"{entry_id}_podcast"
+        # Tạo slug từ title để entity_id dễ đọc
+        slug = entry_title.lower().replace(" ", "_")[:20]
+        self.entity_id = f"sensor.{slug}_podcast"
+        self._attr_name = f"{entry_title} Podcast"
         self._attr_icon = "mdi:podcast"
 
     @property
