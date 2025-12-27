@@ -37,6 +37,32 @@ def get_groq_models(api_key):
     except: pass
     return FALLBACK_MODELS
 
+def get_openai_models(api_key, base_url):
+    """Fetch models from OpenAI-compatible API endpoint."""
+    try:
+        # Construct models endpoint URL
+        if base_url:
+            url = base_url.rstrip('/')
+            # Remove /chat/completions if present
+            if url.endswith('/chat/completions'):
+                url = url.rsplit('/chat/completions', 1)[0]
+            # Ensure /models endpoint
+            if not url.endswith('/models'):
+                url = url.rstrip('/') + '/models'
+        else:
+            url = "https://api.openai.com/v1/models"
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            models = [model["id"] for model in data.get("data", [])]
+            if models:
+                return models
+    except: pass
+    # Fallback to common OpenAI models
+    return ["gemini-2.0-flash", "gemini-2.5-flash", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
+
 class VnNewsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -95,24 +121,37 @@ class VnNewsOptionsFlowHandler(config_entries.OptionsFlow):
         options = self.config_entry.options
 
         # Lấy giá trị hiện tại
-        cur_api = options.get(CONF_API_KEY, config.get(CONF_API_KEY))
-        cur_prov = options.get(CONF_AI_PROVIDER, config.get(CONF_AI_PROVIDER, "gemini"))
-        cur_mod = options.get(CONF_MODEL, config.get(CONF_MODEL, DEFAULT_MODEL))
-        cur_len = options.get(CONF_SUMMARY_LENGTH, config.get(CONF_SUMMARY_LENGTH, DEFAULT_LENGTH))
-        cur_base_url = options.get(CONF_BASE_URL, config.get(CONF_BASE_URL, ""))
+        cur_api = options.get(CONF_API_KEY, config.get(CONF_API_KEY)) or ""
+        cur_prov = options.get(CONF_AI_PROVIDER, config.get(CONF_AI_PROVIDER, "gemini")) or "gemini"
+        cur_mod = options.get(CONF_MODEL, config.get(CONF_MODEL, DEFAULT_MODEL)) or DEFAULT_MODEL
+        cur_len = options.get(CONF_SUMMARY_LENGTH, config.get(CONF_SUMMARY_LENGTH, DEFAULT_LENGTH)) or DEFAULT_LENGTH
+        cur_base_url = options.get(CONF_BASE_URL, config.get(CONF_BASE_URL, "")) or ""
 
         # List model logic
-        model_list = FALLBACK_MODELS
+        model_list = list(FALLBACK_MODELS)  # Copy to avoid modifying original
 
-        if cur_prov == "openai":
+        if cur_prov == "openai" and cur_api:
+            # Fetch models from OpenAI-compatible API
+            fetched = await self.hass.async_add_executor_job(get_openai_models, cur_api, cur_base_url)
+            if fetched:
+                model_list = fetched
+            # Set default model for OpenAI if current is Groq model
             if not cur_mod or cur_mod == DEFAULT_MODEL or cur_mod in FALLBACK_MODELS:
                 cur_mod = DEFAULT_OPENAI_MODEL
+            # Ensure current model is in list
+            if cur_mod and cur_mod not in model_list:
+                model_list.append(cur_mod)
 
         elif cur_prov == "groq" and cur_api:
             fetched = await self.hass.async_add_executor_job(get_groq_models, cur_api)
             if fetched:
                 model_list = fetched
-                if cur_mod not in model_list: model_list.append(cur_mod)
+                if cur_mod and cur_mod not in model_list:
+                    model_list.append(cur_mod)
+
+        # Ensure model_list is never empty
+        if not model_list:
+            model_list = list(FALLBACK_MODELS)
 
         # Logic dynamic schema cho Model (Sử dụng SelectSelector với custom_value=True)
         # Cho phép user chọn từ list HOẶC nhập tay bất kỳ string nào
@@ -124,20 +163,21 @@ class VnNewsOptionsFlowHandler(config_entries.OptionsFlow):
             )
         )
 
-        # Get current advanced settings
-        cur_max_articles = options.get(CONF_MAX_ARTICLES, config.get(CONF_MAX_ARTICLES, DEFAULT_MAX_ARTICLES))
-        cur_include_kw = options.get(CONF_INCLUDE_KEYWORDS, config.get(CONF_INCLUDE_KEYWORDS, DEFAULT_INCLUDE_KEYWORDS))
-        cur_exclude_kw = options.get(CONF_EXCLUDE_KEYWORDS, config.get(CONF_EXCLUDE_KEYWORDS, DEFAULT_EXCLUDE_KEYWORDS))
-        cur_quiet_start = options.get(CONF_QUIET_START, config.get(CONF_QUIET_START, DEFAULT_QUIET_START))
-        cur_quiet_end = options.get(CONF_QUIET_END, config.get(CONF_QUIET_END, DEFAULT_QUIET_END))
-        cur_timeout = options.get(CONF_AI_TIMEOUT, config.get(CONF_AI_TIMEOUT, DEFAULT_AI_TIMEOUT))
-        cur_retry = options.get(CONF_AI_RETRY, config.get(CONF_AI_RETRY, DEFAULT_AI_RETRY))
-        cur_fallback = options.get(CONF_FALLBACK_MODEL, config.get(CONF_FALLBACK_MODEL, DEFAULT_FALLBACK_MODEL))
+        # Get current advanced settings - ensure proper defaults
+        cur_max_articles = options.get(CONF_MAX_ARTICLES, config.get(CONF_MAX_ARTICLES, DEFAULT_MAX_ARTICLES)) or DEFAULT_MAX_ARTICLES
+        cur_include_kw = options.get(CONF_INCLUDE_KEYWORDS, config.get(CONF_INCLUDE_KEYWORDS, DEFAULT_INCLUDE_KEYWORDS)) or ""
+        cur_exclude_kw = options.get(CONF_EXCLUDE_KEYWORDS, config.get(CONF_EXCLUDE_KEYWORDS, DEFAULT_EXCLUDE_KEYWORDS)) or ""
+        cur_quiet_start = options.get(CONF_QUIET_START, config.get(CONF_QUIET_START, DEFAULT_QUIET_START)) or DEFAULT_QUIET_START
+        cur_quiet_end = options.get(CONF_QUIET_END, config.get(CONF_QUIET_END, DEFAULT_QUIET_END)) or DEFAULT_QUIET_END
+        cur_timeout = options.get(CONF_AI_TIMEOUT, config.get(CONF_AI_TIMEOUT, DEFAULT_AI_TIMEOUT)) or DEFAULT_AI_TIMEOUT
+        cur_retry = options.get(CONF_AI_RETRY, config.get(CONF_AI_RETRY, DEFAULT_AI_RETRY)) or DEFAULT_AI_RETRY
+        cur_fallback = options.get(CONF_FALLBACK_MODEL, config.get(CONF_FALLBACK_MODEL, DEFAULT_FALLBACK_MODEL)) or ""
 
-        # Fallback model selector
+        # Fallback model selector - include empty option
+        fallback_options = [""] + sorted(model_list)  # Empty string = no fallback
         fallback_selector = SelectSelector(
             SelectSelectorConfig(
-                options=sorted(model_list),
+                options=fallback_options,
                 custom_value=True,
                 mode=SelectSelectorMode.DROPDOWN,
             )
