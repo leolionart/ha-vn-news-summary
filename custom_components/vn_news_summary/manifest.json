@@ -6,7 +6,7 @@
   "requirements": ["feedparser>=6.0.0"],
   "dependencies": [],
   "codeowners": [],
-  "version": "2.5.0",
+  "version": "2.5.1",
   "iot_class": "cloud_polling",
   "icon": "mdi:newspaper-variant-outline"
 

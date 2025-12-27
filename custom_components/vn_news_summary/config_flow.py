@@ -2,6 +2,11 @@ import voluptuous as vol
 import requests
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 from .const import (
     DOMAIN, CONF_API_KEY, CONF_AI_PROVIDER, CONF_SOURCES,
     CONF_UPDATE_INTERVAL, CONF_PROMPT, CONF_MODEL, CONF_SUMMARY_LENGTH, CONF_BASE_URL,
@@ -39,9 +44,16 @@ class VnNewsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_AI_PROVIDER, default="gemini"): vol.In(["gemini", "groq", "openai"]),
             vol.Required(CONF_API_KEY): str,
             vol.Optional(CONF_BASE_URL): str,
+            vol.Optional(CONF_MODEL, default=DEFAULT_MODEL): SelectSelector(
+                SelectSelectorConfig(
+                    options=sorted(FALLBACK_MODELS),
+                    custom_value=True,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
             vol.Required(CONF_SOURCES, default=DEFAULT_SOURCES): str,
             vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_INTERVAL): int,
-            vol.Optional(CONF_SUMMARY_LENGTH, default=DEFAULT_LENGTH): vol.In(LENGTH_OPTIONS), # <--- Chọn độ dài
+            vol.Optional(CONF_SUMMARY_LENGTH, default=DEFAULT_LENGTH): vol.In(LENGTH_OPTIONS),
             vol.Optional(CONF_PROMPT, default=DEFAULT_PROMPT): str,
         })
 
@@ -73,27 +85,31 @@ class VnNewsOptionsFlowHandler(config_entries.OptionsFlow):
         # List model logic
         model_list = FALLBACK_MODELS
 
-        # Logic dynamic schema cho Model
-        model_schema_field = vol.In(sorted(model_list))
-
         if cur_prov == "openai":
-            # Nếu là OpenAI -> Cho phép nhập text tự do
             if not cur_mod or cur_mod == DEFAULT_MODEL or cur_mod in FALLBACK_MODELS:
                 cur_mod = DEFAULT_OPENAI_MODEL
-            model_schema_field = str # Text input
 
         elif cur_prov == "groq" and cur_api:
             fetched = await self.hass.async_add_executor_job(get_groq_models, cur_api)
             if fetched:
                 model_list = fetched
                 if cur_mod not in model_list: model_list.append(cur_mod)
-            model_schema_field = vol.In(sorted(model_list))
+
+        # Logic dynamic schema cho Model (Sử dụng SelectSelector với custom_value=True)
+        # Cho phép user chọn từ list HOẶC nhập tay bất kỳ string nào
+        model_selector = SelectSelector(
+            SelectSelectorConfig(
+                options=sorted(model_list),
+                custom_value=True,
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        )
 
         schema = vol.Schema({
             vol.Required(CONF_API_KEY, default=cur_api): str,
             vol.Required(CONF_AI_PROVIDER, default=cur_prov): vol.In(["gemini", "groq", "openai"]),
             vol.Optional(CONF_BASE_URL, default=cur_base_url): str,
-            vol.Optional(CONF_MODEL, default=cur_mod): model_schema_field,
+            vol.Optional(CONF_MODEL, default=cur_mod): model_selector,
 
             # Menu chọn độ dài mới
             vol.Required(CONF_SUMMARY_LENGTH, default=cur_len): vol.In(LENGTH_OPTIONS),
