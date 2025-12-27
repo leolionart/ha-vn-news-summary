@@ -14,7 +14,7 @@ BASE_URL = "https://proxy.naai.studio/v1" # Thử thêm /v1
 PROVIDER = "openai"
 SOURCES = ["https://vnexpress.net/rss/tin-moi-nhat.rss"]
 USER_STYLE = "Văn phong biên tập viên tin tức, nghiêm túc, dễ hiểu."
-MODEL_NAME = "gpt-3.5-turbo" # Model giả định, proxy của bạn có thể map sang model khác
+MODEL_NAME = "gemini-2.5-flash" # Model test chính xác
 SUMMARY_LEN = "Tiêu chuẩn (Khoảng 150 từ)"
 
 # --- COPY CORE LOGIC TỪ sensor.py (đã lược bỏ phần phụ thuộc HA) ---
