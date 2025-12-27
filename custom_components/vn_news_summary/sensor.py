@@ -12,8 +12,8 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.components.sensor import SensorEntity
 
 from .const import (
-    DOMAIN, CONF_API_KEY, CONF_AI_PROVIDER, CONF_SOURCES, 
-    CONF_UPDATE_INTERVAL, CONF_PROMPT, CONF_MODEL, CONF_SUMMARY_LENGTH, 
+    DOMAIN, CONF_API_KEY, CONF_AI_PROVIDER, CONF_SOURCES,
+    CONF_UPDATE_INTERVAL, CONF_PROMPT, CONF_MODEL, CONF_SUMMARY_LENGTH, CONF_BASE_URL,
     DEFAULT_MODEL, DEFAULT_LENGTH
 )
 
@@ -36,7 +36,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     provider = config.get(CONF_AI_PROVIDER, "gemini")
     model_name = config.get(CONF_MODEL, DEFAULT_MODEL)
     summary_len = config.get(CONF_SUMMARY_LENGTH, DEFAULT_LENGTH)
-    user_style = config.get(CONF_PROMPT, "") 
+    user_style = config.get(CONF_PROMPT, "")
+    base_url = config.get(CONF_BASE_URL, "")
 
     raw_sources = config.get(CONF_SOURCES, "")
     sources = []
@@ -47,7 +48,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     async def async_update_data():
         return await hass.async_add_executor_job(
-            fetch_and_process_json, api_key, provider, sources, user_style, model_name, summary_len
+            fetch_and_process_json, api_key, provider, sources, user_style, model_name, summary_len, base_url
         )
 
     coordinator = DataUpdateCoordinator(
@@ -133,7 +134,7 @@ class VnNewsPodcastSensor(CoordinatorEntity, SensorEntity):
             return {"podcast_content": intro + content + outro}
         return {"podcast_content": "Chưa có dữ liệu tin tức."}
 
-def fetch_and_process_json(api_key, provider, sources, user_style, model_name, summary_len):
+def fetch_and_process_json(api_key, provider, sources, user_style, model_name, summary_len, base_url):
     if not sources: return []
 
     length_instruction = "khoảng 150 từ"
@@ -218,6 +219,34 @@ def fetch_and_process_json(api_key, provider, sources, user_style, model_name, s
             )
             if resp.status_code == 200:
                 response_text = resp.json()['choices'][0]['message']['content']
+
+        elif provider == "openai":
+            # Sử dụng Base URL nếu có, ngược lại dùng mặc định
+            url = base_url if base_url else "https://api.openai.com/v1/chat/completions"
+            # Chuẩn hóa URL nếu người dùng quên /v1/chat/completions trong base url ngắn gọn (tuỳ chọn, ở đây giả định base_url là full endpoint hoặc base path)
+            # Tuy nhiên, thông thường base_url trong các thư viện là "https://api.openai.com/v1", còn endpoint cụ thể ghép sau.
+            # Để đơn giản cho user, ta quy ước user nhập FULL endpoint hoặc ta ghép.
+            # Cách an toàn: Nếu base_url không chứa "chat/completions", ta nối vào (logic mềm dẻo).
+            if "chat/completions" not in url:
+                url = url.rstrip('/') + "/chat/completions"
+
+            resp = requests.post(
+                url,
+                json={
+                    "messages": [{"role": "user", "content": json_prompt}],
+                    "model": model_name,
+                    # OpenAI hỗ trợ response_format={"type": "json_object"} với các model mới
+                    # Để an toàn, ta chỉ dùng nếu model hỗ trợ, hoặc cứ gửi, nếu lỗi thì fallback (nhưng ở đây cứ gửi)
+                    # Lưu ý: OpenAI yêu cầu prompt phải có chữ "JSON" nếu dùng mode json_object. Prompt của ta đã có.
+                    "response_format": {"type": "json_object"}
+                },
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                timeout=40
+            )
+            if resp.status_code == 200:
+                response_text = resp.json()['choices'][0]['message']['content']
+            else:
+                 _LOGGER.error(f"OpenAI Error {resp.status_code}: {resp.text}")
 
         # 3. GHÉP DỮ LIỆU AI VÀO DỮ LIỆU GỐC (ẢNH, LINK)
         ai_data = []

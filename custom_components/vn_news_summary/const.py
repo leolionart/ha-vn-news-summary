@@ -6,6 +6,7 @@ CONF_UPDATE_INTERVAL = "update_interval"
 CONF_PROMPT = "prompt"
 CONF_MODEL = "model"
 CONF_SUMMARY_LENGTH = "summary_length" # <--- Mới
+CONF_BASE_URL = "base_url"
 
 DEFAULT_SOURCES = "https://vnexpress.net/rss/tin-moi-nhat.rss"
 DEFAULT_INTERVAL = 60
